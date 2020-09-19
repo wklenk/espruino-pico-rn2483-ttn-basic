@@ -1,6 +1,8 @@
 /*
   Simple LoRaWAN node targeted to The Things Network (TTN)
   using Espruino Pico and Microchip RN2483 LoRa Technology Module.
+  There is a focus on low power consumption, targeting more than one year of
+  operation on a single battery.
 
   Note: If you have chosen to upload the code to RAM (default) in the Espruino IDE, you need
         to interactively call "onInit();" on the device's JavaScript console after uploading.
@@ -22,7 +24,6 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 */
-
 
 // Some radio modules (such as the RN2483) also enforce the duty cycle limits. 
 // https://www.thethingsnetwork.org/docs/lorawan/duty-cycle.html
@@ -187,8 +188,7 @@ function onInit() {
       // It may happen that a message cannot be sent to the LoRaWAN if you send too frequently.
       // In the Things Network’s public community network, the "Fair Access Policy" limits the uplink airtime to 30 seconds per day (24 hours) per node.
 
-      //setInterval(periodicTask, 5 * 60 * 1000); 
-      setInterval(periodicTask, 1 * 60 * 1000); 
+      setInterval(periodicTask, 5 * 60 * 1000); 
 
       // Works only when not connected to USB
       // Details: https://www.espruino.com/Power+Consumption
