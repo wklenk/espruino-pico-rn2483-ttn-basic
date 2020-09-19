@@ -4,6 +4,9 @@
   There is a focus on low power consumption, targeting more than one year of
   operation on a single battery.
 
+  As optional sensor a MB1242 I2CXL-MaxSonar-EZ4 is used, that is connected via I2C.
+  It returns the distance in centimeter as an array of 2 bytes.
+
   Note: If you have chosen to upload the code to RAM (default) in the Espruino IDE, you need
         to interactively call "onInit();" on the device's JavaScript console after uploading.
 
@@ -43,11 +46,14 @@ const deviceOTAAConfiguration = {
 };
 
 
+// Set up I2C for optional sensor. Using I2C2
+I2C2.setup({ scl : B10, sda: B3, bitrate: 50000 });
+
 Serial1.setup(57600, { tx:B6, rx:B7 });
 var at = require("AT").connect(Serial1);
 at.debug(debug);
 
-var resetLine = B3;
+var resetLine = B5;
 
 at.registerLine('denied', () => {
   if (debug) console.log("Cannot join: There is some problem with the network or your settings.");
@@ -150,11 +156,37 @@ periodicTask = () => {
     .then(() => {
       if (debug) console.log('wake up finished');
     })
-    .then(() => sendCommand('mac tx uncnf 1 42', 30000, 'mac_tx_ok'))
+    .then(() => readSensor())
+    .then((distanceAsHexString) => sendCommand('mac tx uncnf 1 ' + distanceAsHexString, 30000, 'mac_tx_ok'))
     .then(() => rn2483SendToSleep())
     .then(() => {
       if (debug) console.log('Periodic task done.');
     });
+};
+
+// Read distance using Ultrasonic sensor
+readSensor = () => {
+
+  // Use standard 7bit I2C addressing mode
+  I2C2.writeTo(224 >> 1, 81);
+
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      resolve();
+    }, 100);
+  })
+  .then(() => {
+    var distanceArray = I2C2.readFrom(224 >> 1, 2);
+    if (debug) console.log('distance', distanceArray);
+
+    // Convert to hex string
+    var distanceAsHexString = '';
+    distanceArray.forEach((byte) => {
+      distanceAsHexString += ('0' + (byte & 0xFF).toString(16)).slice(-2);
+    });
+
+    return distanceAsHexString;
+  });
 };
 
 function onInit() {
@@ -188,7 +220,7 @@ function onInit() {
       // It may happen that a message cannot be sent to the LoRaWAN if you send too frequently.
       // In the Things Network’s public community network, the "Fair Access Policy" limits the uplink airtime to 30 seconds per day (24 hours) per node.
 
-      setInterval(periodicTask, 5 * 60 * 1000); 
+      setInterval(periodicTask, 15 * 60 * 1000); 
 
       // Works only when not connected to USB
       // Details: https://www.espruino.com/Power+Consumption

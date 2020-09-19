@@ -35,16 +35,21 @@ regulator at hand.
 [Espruino Pico Pinout](http://www.espruino.com/Pico)
 [RN2483 Breakout Board Pinout)[https://www.tindie.com/products/drazzy/lorawan-rn2483rn2903-breakout-board-assembled/]
 
-| Espruino Pico  | RN2483 | Remark |
-|---|---|---|
-| GND |   | **Only when not powered by USB: Connect to battery GND** |
-| BAT_IN  |   | **Only when not powered by USB: Connect to battery VBAT** |
-| GND | GND  | |
-| 3.3 | 3V3  | Connected to the on-board Voltage regulator of the Pico |
-| B7 USART1RX | Tx  |  |
-| B6 USART1TX | Rx  |  |
-| B3 | RST |  |
+| Espruino Pico  | RN2483 | Optional I2C Sensor | Remark |
+|---|---|---|---|
+| GND |   | | **Only when not powered by USB: Connect to battery GND** |
+| BAT_IN  | |   | **Only when not powered by USB: Connect to battery VBAT** |
+| GND | GND  | | |
+| 3.3 | 3V3  | | Connected to the on-board Voltage regulator of the Pico |
+| B7 USART1RX | Tx  | | |
+| B6 USART1TX | Rx  | | |
+| B5 | RST |  | |
+| GND | | GND | |
+| 3.3 | | V+ | |
+| I2C2SCL | | Pin 5 SCL | |
+| I2C2SDA | | Pin 4-SDA | |
 
+Pin 5-SCL
 ## Preparation in TTN Console
 https://console.thethingsnetwork.org/
 You first need to create an application in [TTN console](https://console.thethingsnetwork.org/), and create a device within this application.
