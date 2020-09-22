@@ -46,8 +46,6 @@ const deviceOTAAConfiguration = {
 };
 
 
-// Set up I2C for optional sensor. Using I2C2
-I2C2.setup({ scl : B10, sda: B3, bitrate: 50000 });
 
 Serial1.setup(57600, { tx:B6, rx:B7 });
 var at = require("AT").connect(Serial1);
@@ -151,13 +149,17 @@ rn2483WakeUp = () => {
 };
 
 periodicTask = () => {
+  var message = '';
+
   if (debug) console.log('Periodic task started.');
-  rn2483WakeUp()
+
+  readSensor()
+    .then((distanceAsHexString) => message += distanceAsHexString)
+    .then(() => rn2483WakeUp())
     .then(() => {
       if (debug) console.log('wake up finished');
     })
-    .then(() => readSensor())
-    .then((distanceAsHexString) => sendCommand('mac tx uncnf 1 ' + distanceAsHexString, 30000, 'mac_tx_ok'))
+    .then(() => sendCommand('mac tx uncnf 1 ' + message, 30000, 'mac_tx_ok'))
     .then(() => rn2483SendToSleep())
     .then(() => {
       if (debug) console.log('Periodic task done.');
@@ -165,7 +167,15 @@ periodicTask = () => {
 };
 
 // Read distance using Ultrasonic sensor
+// Returns a promise
+
+// TODO: To save power, the sensor should be cut-off power and only
+// powered up when needed (e.g. by simple low-side MOSFET switch)
 readSensor = () => {
+
+  // Set up I2C for optional sensor. Using I2C2
+  // Need to do this every time after waking up
+  I2C2.setup({ scl : B10, sda: B3, bitrate: 50000 });
 
   // Use standard 7bit I2C addressing mode
   I2C2.writeTo(224 >> 1, 81);
@@ -176,6 +186,7 @@ readSensor = () => {
     }, 100);
   })
   .then(() => {
+    // Use standard 7bit I2C addressing mode
     var distanceArray = I2C2.readFrom(224 >> 1, 2);
     if (debug) console.log('distance', distanceArray);
 
@@ -188,6 +199,15 @@ readSensor = () => {
     return distanceAsHexString;
   });
 };
+
+
+// readSensor = () => {
+//   return new Promise((resolve, reject) => {
+//     setTimeout(() => {
+//       resolve('010203');
+//     }, 100);
+//   });
+// };
 
 function onInit() {
   // Avoid that USART1 is used as serial console when USB is disconnected
@@ -220,7 +240,7 @@ function onInit() {
       // It may happen that a message cannot be sent to the LoRaWAN if you send too frequently.
       // In the Things Network’s public community network, the "Fair Access Policy" limits the uplink airtime to 30 seconds per day (24 hours) per node.
 
-      setInterval(periodicTask, 15 * 60 * 1000); 
+      setInterval(periodicTask, 15 * 60 * 1000); // Every 15 minutes
 
       // Works only when not connected to USB
       // Details: https://www.espruino.com/Power+Consumption
