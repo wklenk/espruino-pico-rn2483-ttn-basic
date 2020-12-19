@@ -7,6 +7,9 @@
   As optional sensor a MB1242 I2CXL-MaxSonar-EZ4 is used, that is connected via I2C.
   It returns the distance in centimeter as an array of 2 bytes.
 
+  As this sensor consumes power even in idle mode, a LM3671 is used as kind of "switch" to 
+  cut-off the power supply for this sensor when it is not in use.
+
   Note: If you have chosen to upload the code to RAM (default) in the Espruino IDE, you need
         to interactively call "onInit();" on the device's JavaScript console after uploading.
 
@@ -28,13 +31,6 @@
 
 */
 
-// Some radio modules (such as the RN2483) also enforce the duty cycle limits. 
-// https://www.thethingsnetwork.org/docs/lorawan/duty-cycle.html
-
-// Seems already to use frequency plan EU863-870 of The Things Network TTN
-// https://www.thethingsnetwork.org/docs/lorawan/frequency-plans.html
-
-
 var debug = true;
 
 // LoRaWAN Over the Air Activation (OTAA)
@@ -45,13 +41,12 @@ const deviceOTAAConfiguration = {
   'appKey': '00000000000000000000000000000000'
 };
 
-
-
 Serial1.setup(57600, { tx:B6, rx:B7 });
 var at = require("AT").connect(Serial1);
 at.debug(debug);
 
-var resetLine = B5;
+var resetRN2483 = B5;
+var enableLM3671 = B4;
 
 at.registerLine('denied', () => {
   if (debug) console.log("Cannot join: There is some problem with the network or your settings.");
@@ -79,10 +74,10 @@ sendCommand = function (command, timeoutMs, waitForLine) {
 rn2483Setup = () => {
   return new Promise((resolve, reject) => {
     // Either do a hardware or software reset.
-    // Depends if variable 'resetLine' is defined.
-    if (resetLine) {
-      resetLine.reset();
-      resetLine.set();
+    // Depends if variable 'resetRN2483' is defined.
+    if (resetRN2483) {
+      resetRN2483.reset();
+      resetRN2483.set();
       resolve();
     } else {
       sendCommand('sys reset')
@@ -154,16 +149,20 @@ periodicTask = () => {
   if (debug) console.log('Periodic task started.');
 
   readSensor()
-    .then((distanceAsHexString) => message += distanceAsHexString)
+    .then((distanceAsHexString) => {
+      message += distanceAsHexString;
+    })
     .then(() => rn2483WakeUp())
     .then(() => {
       if (debug) console.log('wake up finished');
     })
-    .then(() => sendCommand('mac tx uncnf 1 ' + message, 30000, 'mac_tx_ok'))
-    .then(() => rn2483SendToSleep())
+    .then(() => transmitData(message))
     .then(() => {
       if (debug) console.log('Periodic task done.');
-    });
+    })
+    .catch((err) => {
+      if (debug) console.log('Periodic task failed:', err);
+    })
 };
 
 // Read distance using Ultrasonic sensor
@@ -173,21 +172,37 @@ periodicTask = () => {
 // powered up when needed (e.g. by simple low-side MOSFET switch)
 readSensor = () => {
 
-  // Set up I2C for optional sensor. Using I2C2
-  // Need to do this every time after waking up
-  I2C2.setup({ scl : B10, sda: B3, bitrate: 50000 });
-
-  // Use standard 7bit I2C addressing mode
-  I2C2.writeTo(224 >> 1, 81);
-
   return new Promise((resolve, reject) => {
+    // Pull "enable" of LM3671 to high in order to provide supply power
+    // to the MB1242 sensor.
+    enableLM3671.set();
+
+    // Set up I2C for optional sensor. Using I2C2
+    // Need to do this every time after waking up
+    I2C2.setup({ scl : B10, sda: B3, bitrate: 50000 });
+
     setTimeout(() => {
       resolve();
-    }, 100);
+    }, 200); // Give the sensor some time to start up
+  })
+  .then(() => {
+    return new Promise((resolve, reject) => {
+      // Use standard 7bit I2C addressing mode
+      I2C2.writeTo(224 >> 1, 81);
+
+      setTimeout(() => {
+        resolve();
+      }, 200); // Give the sensor some time to do a range reading
+    });
   })
   .then(() => {
     // Use standard 7bit I2C addressing mode
     var distanceArray = I2C2.readFrom(224 >> 1, 2);
+
+    // Pull "enable" of LM3671 to low in order to cut-off power
+    // from the MB1242 sensor.
+    enableLM3671.reset();
+
     if (debug) console.log('distance', distanceArray);
 
     // Convert to hex string
@@ -197,17 +212,25 @@ readSensor = () => {
     });
 
     return distanceAsHexString;
+  })
+  .catch((err) => {
+    // Pull "enable" of LM3671 to low in order to cut-off power
+    // from the MB1242 sensor.
+    if (debug) console.log('Error reading sensor', err);
+    enableLM3671.reset();
+    throw err;
   });
 };
 
-
-// readSensor = () => {
-//   return new Promise((resolve, reject) => {
-//     setTimeout(() => {
-//       resolve('010203');
-//     }, 100);
-//   });
-// };
+transmitData = (message) => {
+  return sendCommand('mac tx uncnf 1 ' + message, 30000, 'mac_tx_ok')
+    .then(() => rn2483SendToSleep())
+    .catch((err) => {
+      console.log('Error transmitting data', err);
+      rn2483SendToSleep();
+      throw err;
+    });
+};
 
 function onInit() {
   // Avoid that USART1 is used as serial console when USB is disconnected
@@ -220,6 +243,10 @@ function onInit() {
   // Will light LED2 (green) when Espruino is not sleeping and is busy executing JavaScript
   // Comment out for maximum power saving
   setBusyIndicator(LED2);
+
+  // Pull "enable" of LM3671 to low in order to cut-off power
+  // from the MB1242 sensor.
+  enableLM3671.reset();
 
   rn2483Setup()
     .then(() => {
@@ -240,7 +267,7 @@ function onInit() {
       // It may happen that a message cannot be sent to the LoRaWAN if you send too frequently.
       // In the Things Network’s public community network, the "Fair Access Policy" limits the uplink airtime to 30 seconds per day (24 hours) per node.
 
-      setInterval(periodicTask, 15 * 60 * 1000); // Every 15 minutes
+      setInterval(periodicTask, 30 * 60 * 1000); // Every 30 minutes
 
       // Works only when not connected to USB
       // Details: https://www.espruino.com/Power+Consumption

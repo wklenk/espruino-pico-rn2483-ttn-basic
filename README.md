@@ -1,13 +1,17 @@
 # espruino-pico-rn2483-ttn-basic
-Simple LoRaWAN node targeted to [The Things Network (TTN)](https://www.thethingsnetwork.org/) 
+Simple LoRaWAN node connected to [The Things Network (TTN)](https://www.thethingsnetwork.org/) 
 using [Espruino Pico](http://www.espruino.com/Pico)
-and Microchip [RN2483 LoRa Technology Module](https://www.microchip.com/wwwproducts/en/RN2483).
+and Microchip [RN2483 LoRa Technology Module](https://www.microchip.com/wwwproducts/en/RN2483). 
+As sensor a [MB1242 I2CXL-MaxSonar-EZ4](https://www.maxbotix.com/ultrasonic_sensors/mb1242.htm) is used, that is connected via I2C. 
+It returns the distance in centimeter as an array of 2 bytes.
   
-  There is a focus on low power consumption, targeting more than one year of operation on a single battery.
+The most prominent goal was to find out how to design a device and its
+software in order to minimize the energy consumption in order to maximize
+battery life.
 
 ## Motivation
-* In many cases, LoRaWAN nodes are deployed in remote places without
-  a static power supply. So both hardware and software need to be
+* In many cases, LoRaWAN nodes are deployed in remote places **without**
+  **a static power supply**. So both hardware and software need to be
   designed in a way that allows battery operation.
 * With battery operation, operation of at least 1 year should be
   technically feasible these days, given that sending sensor values
@@ -26,30 +30,28 @@ Last but not least ...
 I use a RN2483A/RN2903A breakout board that I ordered for about €30 at Tindie:
 https://www.tindie.com/products/DrAzzy/lorawan-rn2483rn2903-breakout-board-assembled/
 
+[RN2483 Breakout Board Pinout](https://www.tindie.com/products/drazzy/lorawan-rn2483rn2903-breakout-board-assembled/)
+
+
 **Level Shifter Option:** As the Espruino Pico already operates at 3.3V, there
 should be no need for a level shifter. However, if you like to play around
 with this module by simply attaching a (FTDI) Serial-to-UART cable which 
 has 5v levels, then you probably want to have a level shifter and a voltage
 regulator at hand.
 
+The Espruino Pico gets its power from a 9V battery. It has a built-in voltage
+regulator that converts the volate to 3.3V.
 [Espruino Pico Pinout](http://www.espruino.com/Pico)
-[RN2483 Breakout Board Pinout)[https://www.tindie.com/products/drazzy/lorawan-rn2483rn2903-breakout-board-assembled/]
 
-| Espruino Pico  | RN2483 | Optional I2C Sensor | Remark |
-|---|---|---|---|
-| GND |   | | **Only when not powered by USB: Connect to battery GND** |
-| BAT_IN  | |   | **Only when not powered by USB: Connect to battery VBAT** |
-| GND | GND  | | |
-| 3.3 | 3V3  | | Connected to the on-board Voltage regulator of the Pico |
-| B7 USART1RX | Tx  | | |
-| B6 USART1TX | Rx  | | |
-| B5 | RST |  | |
-| GND | | GND | |
-| 3.3 | | V+ | |
-| I2C2SCL | | Pin 5 SCL | |
-| I2C2SDA | | Pin 4-SDA | |
+The MaxBotix MB1242 consumes a consiberable amount energy, even in idle mode, 
+so a [Adafruit LM3671 3.3V Buck Converter Breakout](https://www.adafruit.com/product/2745) is used as kind of "switch" to cut-off the power supply for this 
+sensor when it is not in use. Yes, people say that cutting off the power
+supply is **not sufficient** to make sure that the MB1242 really no longer
+consumes any energy, but in my case this trick was very effective.
 
-Pin 5-SCL
+
+![Wiring on Breadboard](media/sketch_bb.png "Wiring on Breadboard")
+
 ## Preparation in TTN Console
 https://console.thethingsnetwork.org/
 You first need to create an application in [TTN console](https://console.thethingsnetwork.org/), and create a device within this application.
@@ -137,3 +139,36 @@ https://www.espruino.com/Power+Consumption
     ["sys sleep 86400000\r\n"
     Periodic task done.
     > 
+
+## Results
+
+* The experiment up to now runs for more than 6 weeks now, longer than
+  any battery powered circuit I did before.
+* Maybe it could be even more power-efficient if we could eliminate the 
+  voltage regulator on the Espruino Pico and use an appropriate battery instead
+* The Microchip RN2483 module has quite helpful in keeping the complexity
+  of the LoRaWAN protocol away from the project, especially suprised with
+  its *duty cycle* enforcing mechanisms and *adaptive data rate* functionality. It also has a nice functionality to send it to sleep
+  and wake it up when needed again.
+  https://www.thethingsnetwork.org/docs/lorawan/duty-cycle.html
+
+To visualize the measurements, I used 
+* [Node-RED](https://nodered.org/)
+* [Application Nodes for "The Things Network"](https://flows.nodered.org/node/node-red-contrib-ttn)
+* [Node-RED nodes to save and query data from an influxdb time series database](https://flows.nodered.org/node/node-red-contrib-influxdb)
+* [InfluxDB](https://www.influxdata.com/)
+* [Grafana](https://grafana.com/)
+
+Running now for more then 6 weeks, hanging on the ceiling of my garage
+
+![Grafana Output - Running 6 weeks](media/long-time-results.png)
+
+Sending a distance value every 30 minutes (well, there are some few losses)
+
+![Grafana Output - Last hours](media/last-hours.png)
+
+Some similar project with focus on energy consumption and also using
+an ultrasonic sensor can be found here:
+
+https://www.hackster.io/Amedee/low-power-water-level-sensor-for-lorawan-the-things-network-96c877
+
